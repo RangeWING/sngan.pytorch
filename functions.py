@@ -4,6 +4,8 @@
 # @Link    : None
 # @Version : 0.0
 
+# Updated by RangeWING (rangewing@kaist.ac.kr) for celeba 64 dataset support
+
 import os
 import numpy as np
 import torch
@@ -13,9 +15,7 @@ from imageio import imsave
 from tqdm import tqdm
 from copy import deepcopy
 import logging
-
-from utils.inception_score import get_inception_score
-from utils.fid_score import calculate_fid_given_paths
+from imageio import imsave
 
 
 logger = logging.getLogger(__name__)
@@ -96,20 +96,22 @@ def train(args, gen_net: nn.Module, dis_net: nn.Module, gen_optimizer, dis_optim
 
         writer_dict['train_global_steps'] = global_steps + 1
 
-
-def validate(args, fixed_z, fid_stat, gen_net: nn.Module, writer_dict):
+def write_sample(args, fixed_z, gen_net: nn.Module, avg_gen_net: nn.Module, writer_dict, epoch):
     writer = writer_dict['writer']
     global_steps = writer_dict['valid_global_steps']
-
     # eval mode
     gen_net = gen_net.eval()
+    avg_gen_net = avg_gen_net.eval()
 
     # generate images
     sample_imgs = gen_net(fixed_z)
     img_grid = make_grid(sample_imgs, nrow=5, normalize=True, scale_each=True)
 
+    sample_imgs_avg = avg_gen_net(fixed_z)
+    img_grid_avg = make_grid(sample_imgs_avg, nrow=5, normalize=True, scale_each=True)
+
     # get fid and inception score
-    fid_buffer_dir = os.path.join(args.path_helper['sample_path'], 'fid_buffer')
+    fid_buffer_dir = os.path.join(args.path_helper['sample_path'], 'fid_buffer', str(epoch))
     os.makedirs(fid_buffer_dir)
 
     eval_iter = args.num_eval_imgs // args.eval_batch_size
@@ -119,29 +121,37 @@ def validate(args, fixed_z, fid_stat, gen_net: nn.Module, writer_dict):
 
         # Generate a batch of images
         gen_imgs = gen_net(z).mul_(127.5).add_(127.5).clamp_(0.0, 255.0).permute(0, 2, 3, 1).to('cpu', torch.uint8).numpy()
+        gen_imgs_avg = avg_gen_net(z).mul_(127.5).add_(127.5).clamp_(0.0, 255.0).permute(0, 2, 3, 1).to('cpu', torch.uint8).numpy()
         for img_idx, img in enumerate(gen_imgs):
             file_name = os.path.join(fid_buffer_dir, f'iter{iter_idx}_b{img_idx}.png')
             imsave(file_name, img)
+        for img_idx, img in enumerate(gen_imgs_avg):
+            file_name = os.path.join(fid_buffer_dir, f'iter{iter_idx}_b{img_idx}_avg.png')
+            imsave(file_name, img)
         img_list.extend(list(gen_imgs))
-
-    # get inception score
-    logger.info('=> calculate inception score')
-    mean, std = get_inception_score(img_list)
-
-    # get fid score
-    logger.info('=> calculate fid score')
-    fid_score = calculate_fid_given_paths([fid_buffer_dir, fid_stat], inception_path=None)
-
-    os.system('rm -r {}'.format(fid_buffer_dir))
-
     writer.add_image('sampled_images', img_grid, global_steps)
-    writer.add_scalar('Inception_score/mean', mean, global_steps)
-    writer.add_scalar('Inception_score/std', std, global_steps)
-    writer.add_scalar('FID_score', fid_score, global_steps)
-
+    writer.add_image('sampled_images_avg', img_grid_avg, global_steps)
     writer_dict['valid_global_steps'] = global_steps + 1
 
-    return mean, fid_score
+def generate_images(args, path, n_img, gen_net: nn.Module, avg_gen_net: nn.Module, seed_start = 418569):
+    img1_dir = os.path.join(path, 'img')
+    img2_dir = os.path.join(path, 'avg')
+    os.makedirs(img1_dir, exist_ok=True)
+    os.makedirs(img2_dir, exist_ok=True)
+
+    gen_net = gen_net.eval()
+    avg_gen_net = avg_gen_net.eval()
+
+    for iter_idx in tqdm(range(n_img), desc='sample images'):
+        z = torch.cuda.FloatTensor(np.random.RandomState(seed_start + iter_idx).randn(1, args.latent_dim))
+
+        # Generate a batch of images
+        gen_imgs = gen_net(z).mul_(127.5).add_(127.5).clamp_(0.0, 255.0).permute(0, 2, 3, 1).to('cpu', torch.uint8).numpy()
+        gen_imgs_avg = avg_gen_net(z).mul_(127.5).add_(127.5).clamp_(0.0, 255.0).permute(0, 2, 3, 1).to('cpu', torch.uint8).numpy()
+        
+        imsave(os.path.join(img1_dir, f'{iter_idx:04d}.png'), gen_imgs[0])
+        imsave(os.path.join(img2_dir, f'{iter_idx:04d}.png'), gen_imgs_avg[0])
+        
 
 
 class LinearLrDecay(object):

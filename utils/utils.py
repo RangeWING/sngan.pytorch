@@ -6,7 +6,6 @@
 
 import os
 import torch
-import dateutil.tz
 from datetime import datetime
 import time
 import logging
@@ -33,7 +32,7 @@ def set_log_dir(root_dir, exp_name):
 
     # set log path
     exp_path = os.path.join(root_dir, exp_name)
-    now = datetime.now(dateutil.tz.tzlocal())
+    now = datetime.now()
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
     prefix = exp_path + '_' + timestamp
     os.makedirs(prefix)
@@ -56,8 +55,6 @@ def set_log_dir(root_dir, exp_name):
     return path_dict
 
 
-def save_checkpoint(states, is_best, output_dir,
+def save_checkpoint(states, epoch, output_dir,
                     filename='checkpoint.pth'):
-    torch.save(states, os.path.join(output_dir, filename))
-    if is_best:
-        torch.save(states, os.path.join(output_dir, 'checkpoint_best.pth'))
+    torch.save(states, os.path.join(output_dir, f'checkpoint_{epoch:02d}.pth'))

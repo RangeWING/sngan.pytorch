@@ -21,6 +21,14 @@ class ImageDataset(object):
                 transforms.ToTensor(),
                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
             ])
+        elif args.dataset.lower() == 'celeba':
+            Dt = datasets.ImageFolder
+            transform = transforms.Compose([
+                               transforms.Resize((args.img_size, args.img_size)),
+                               transforms.CenterCrop((args.img_size, args.img_size)),
+                               transforms.ToTensor(),
+                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                           ])
         else:
             raise NotImplementedError('Unknown dataset: {}'.format(args.dataset))
 
@@ -32,6 +40,18 @@ class ImageDataset(object):
 
             self.valid = torch.utils.data.DataLoader(
                 Dt(root=args.data_path, split='test', transform=transform),
+                batch_size=args.dis_batch_size, shuffle=False,
+                num_workers=args.num_workers, pin_memory=True)
+
+            self.test = self.valid
+        elif args.dataset.lower() == 'celeba':
+            self.train = torch.utils.data.DataLoader(
+                Dt(root=args.data_path, transform=transform),
+                batch_size=args.dis_batch_size, shuffle=True,
+                num_workers=args.num_workers, pin_memory=True)
+
+            self.valid = torch.utils.data.DataLoader(
+                Dt(root=args.test_data_path, transform=transform),
                 batch_size=args.dis_batch_size, shuffle=False,
                 num_workers=args.num_workers, pin_memory=True)
 

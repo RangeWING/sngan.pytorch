@@ -4,17 +4,13 @@
 # @Link    : None
 # @Version : 0.0
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+# Updated by RangeWING (rangewing@kaist.ac.kr) for celeba 64 dataset support
 
 import cfg
 import models
 import datasets
-from functions import train, validate, LinearLrDecay, load_params, copy_params
+from functions import train, LinearLrDecay, load_params, copy_params, write_sample
 from utils.utils import set_log_dir, save_checkpoint, create_logger
-from utils.inception_score import _init_inception
-from utils.fid_score import create_inception_graph, check_or_download_inception
 
 import torch
 import os
@@ -32,14 +28,11 @@ def main():
     args = cfg.parse_args()
     torch.cuda.manual_seed(args.random_seed)
 
-    # set tf env
-    _init_inception()
-    inception_path = check_or_download_inception(None)
-    create_inception_graph(inception_path)
-
     # import network
     gen_net = eval('models.'+args.model+'.Generator')(args=args).cuda()
     dis_net = eval('models.'+args.model+'.Discriminator')(args=args).cuda()
+
+    print(gen_net)
 
     # weight init
     def weights_init(m):
@@ -72,15 +65,6 @@ def main():
     dataset = datasets.ImageDataset(args)
     train_loader = dataset.train
 
-    # fid stat
-    if args.dataset.lower() == 'cifar10':
-        fid_stat = 'fid_stat/fid_stats_cifar10_train.npz'
-    elif args.dataset.lower() == 'stl10':
-        fid_stat = 'fid_stat/stl10_train_unlabeled_fid_stats_48.npz'
-    else:
-        raise NotImplementedError(f'no fid stat for {args.dataset.lower()}')
-    assert os.path.exists(fid_stat)
-
     # epoch number for dis_net
     args.max_epoch = args.max_epoch * args.n_critic
     if args.max_iter:
@@ -96,11 +80,12 @@ def main():
     if args.load_path:
         print(f'=> resuming from {args.load_path}')
         assert os.path.exists(args.load_path)
-        checkpoint_file = os.path.join(args.load_path, 'Model', 'checkpoint.pth')
+        checkpoint_path = os.path.join(args.load_path, 'Model')
+
+        checkpoint_file = os.path.join(args.load_path, 'Model', 'checkpoint_06.pth')
         assert os.path.exists(checkpoint_file)
         checkpoint = torch.load(checkpoint_file)
         start_epoch = checkpoint['epoch']
-        best_fid = checkpoint['best_fid']
         gen_net.load_state_dict(checkpoint['gen_state_dict'])
         dis_net.load_state_dict(checkpoint['dis_state_dict'])
         gen_optimizer.load_state_dict(checkpoint['gen_optimizer'])
@@ -133,18 +118,10 @@ def main():
               lr_schedulers)
 
         if epoch and epoch % args.val_freq == 0 or epoch == int(args.max_epoch)-1:
-            backup_param = copy_params(gen_net)
-            load_params(gen_net, gen_avg_param)
-            inception_score, fid_score = validate(args, fixed_z, fid_stat, gen_net, writer_dict)
-            logger.info(f'Inception score: {inception_score}, FID score: {fid_score} || @ epoch {epoch}.')
-            load_params(gen_net, backup_param)
-            if fid_score < best_fid:
-                best_fid = fid_score
-                is_best = True
-            else:
-                is_best = False
-        else:
-            is_best = False
+            avg_gen_net = deepcopy(gen_net)
+            load_params(avg_gen_net, gen_avg_param)
+            write_sample(args, fixed_z, gen_net, avg_gen_net, writer_dict, epoch)
+
 
         avg_gen_net = deepcopy(gen_net)
         load_params(avg_gen_net, gen_avg_param)
@@ -158,7 +135,7 @@ def main():
             'dis_optimizer': dis_optimizer.state_dict(),
             'best_fid': best_fid,
             'path_helper': args.path_helper
-        }, is_best, args.path_helper['ckpt_path'])
+        }, epoch+1, args.path_helper['ckpt_path'])
         del avg_gen_net
 
 
