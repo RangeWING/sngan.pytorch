@@ -156,7 +156,7 @@ def parse_args():
         type=int,
         default=4,
         help="the base resolution of the GAN")
-    parser.add_argument('--random_seed', type=int, default=12345)
+    parser.add_argument('--random_seed', type=int, default=1234)
 
     opt = parser.parse_args()
     return opt
