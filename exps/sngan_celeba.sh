@@ -21,5 +21,6 @@ python train.py \
 --n_critic 5 \
 --val_freq 5 \
 --exp_name sngan_64 \
+--random_seed 1324 \
 --data_path ./dataset \
 --test_data_path ./testdata
